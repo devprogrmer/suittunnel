@@ -1,40 +1,77 @@
 #!/usr/bin/env bash
 
-# Configuration
-# IMPORTANT: Replace 'devprogrmer' and 'suittunnel' with your GitHub username and repository name.
-#            Also, ensure 'main-install.sh' is the correct name of your main installer script.
-MAIN_INSTALLER_URL="https://raw.githubusercontent.com/devprogrmer/suittunnel/main/main-install.sh"
-
-# --- Installation Script (Bootstrap) ---
-
 # Exit immediately if a command exits with a non-zero status.
-set -e
+set -euo pipefail
 
-echo "Downloading the main installer script from ${MAIN_INSTALLER_URL}..."
+# --- Configuration ---
+# IMPORTANT: Replace these with your actual values if needed.
+# If you are just installing, these might be pre-configured or handled by the script itself.
+# For this example, we assume the binary is downloaded from a specific URL.
 
-# Download the main installer script using curl
-# -f: Fail silently (no output on HTTP errors)
-# -s: Silent or quiet mode
-# -S: Show error message if it fails
-# -L: Follow redirects
-MAIN_INSTALLER_CONTENT=$(curl -fsSL "${MAIN_INSTALLER_URL}")
+INSTALL_DIR="/opt/tunnel"
+BINARY_URL="https://example.com/path/to/your/suit-tunnel-binary" # Replace with the actual URL of your binary
+BINARY_NAME="suit-tunnel" # The name of the executable binary
 
-# Check if the download was successful
-if [ $? -ne 0 ]; then
-    echo "Error: Failed to download the main installer script."
-    echo "Please check the following:"
-    echo "1. The URL is correct: ${MAIN_INSTALLER_URL}"
-    echo "2. The file exists in your GitHub repository."
-    echo "3. Your repository is public."
+# --- Installation Steps ---
+
+echo "Starting SuitTunnel installation..."
+
+# 1. Create installation directory if it doesn't exist
+if [ ! -d "$INSTALL_DIR" ]; then
+    echo "Creating installation directory: $INSTALL_DIR"
+    sudo mkdir -p "$INSTALL_DIR"
+    # Ensure the directory is owned by the current user for simplicity,
+    # but for production, you might want to manage ownership differently.
+    sudo chown "$(id -u):$(id -g)" "$INSTALL_DIR"
+fi
+
+# 2. Download the binary
+echo "Downloading ${BINARY_NAME} binary from ${BINARY_URL}..."
+if ! curl -fsSL "${BINARY_URL}" -o "${INSTALL_DIR}/${BINARY_NAME}"; then
+    echo "Error: Failed to download the ${BINARY_NAME} binary."
     exit 1
 fi
 
-echo "Main installer script downloaded successfully."
-echo "Executing the main installer..."
+# 3. Set execute permissions for the binary
+echo "Setting execute permissions for ${BINARY_NAME}..."
+chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
 
-# Execute the downloaded script
-# Use bash -c to ensure it runs in a subshell
-bash -c "${MAIN_INSTALLER_CONTENT}"
+# 4. (Optional) Create a systemd service file for auto-starting SuitTunnel
+# This part depends heavily on how your SuitTunnel application is designed to run.
+# Example: Create a service file that runs the binary.
+SERVICE_FILE="/etc/systemd/system/suittunnel.service"
+if ! systemctl list-unit-files | grep -q "suittunnel.service"; then
+    echo "Creating systemd service file: ${SERVICE_FILE}"
+    sudo bash -c "cat > ${SERVICE_FILE}" << EOF
+[Unit]
+Description=SuitTunnel Service
+After=network.target
 
-echo "Installation process finished."
+[Service]
+User=$(id -u -n)
+Group=$(id -g -n)
+WorkingDirectory=${INSTALL_DIR}
+ExecStart=${INSTALL_DIR}/${BINARY_NAME}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+Type=simple
+WantedBy=multi-user.target
+EOF
+    echo "Reloading systemd daemon..."
+    sudo systemctl daemon-reload
+    echo "Enabling and starting SuitTunnel service..."
+    sudo systemctl enable suittunnel.service
+    sudo systemctl start suittunnel.service
+    echo "SuitTunnel service enabled and started."
+else
+    echo "SuitTunnel service already exists. Trying to restart..."
+    sudo systemctl restart suittunnel.service
+    echo "SuitTunnel service restarted."
+fi
+
+echo "SuitTunnel installation and setup completed successfully!"
+echo "You can check the status with: sudo systemctl status suittunnel.service"
+
 exit 0
