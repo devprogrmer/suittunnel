@@ -4,13 +4,13 @@
 set -euo pipefail
 
 # --- Configuration ---
-# IMPORTANT: Replace these with your actual values if needed.
-# If you are just installing, these might be pre-configured or handled by the script itself.
-# For this example, we assume the binary is downloaded from a specific URL.
+# IMPORTANT: Replace this with the actual URL of your SuitTunnel binary.
+# Example: BINARY_URL="https://github.com/devprogrmer/suittunnel/releases/download/v1.0.0/suit-tunnel-linux-amd64"
+BINARY_URL="https://example.com/path/to/your/suit-tunnel-binary" # <<<--- !!! این آدرس را با آدرس صحیح فایل باینری جایگزین کن !!!
+BINARY_NAME="suit-tunnel" # The name of the executable binary
 
 INSTALL_DIR="/opt/tunnel"
-BINARY_URL="https://example.com/path/to/your/suit-tunnel-binary" # Replace with the actual URL of your binary
-BINARY_NAME="suit-tunnel" # The name of the executable binary
+SERVICE_FILE="/etc/systemd/system/suittunnel.service"
 
 # --- Installation Steps ---
 
@@ -20,15 +20,16 @@ echo "Starting SuitTunnel installation..."
 if [ ! -d "$INSTALL_DIR" ]; then
     echo "Creating installation directory: $INSTALL_DIR"
     sudo mkdir -p "$INSTALL_DIR"
-    # Ensure the directory is owned by the current user for simplicity,
-    # but for production, you might want to manage ownership differently.
+    # Ensure the directory is owned by the current user for simplicity.
+    # For production, consider a dedicated user or appropriate permissions.
     sudo chown "$(id -u):$(id -g)" "$INSTALL_DIR"
 fi
 
 # 2. Download the binary
 echo "Downloading ${BINARY_NAME} binary from ${BINARY_URL}..."
 if ! curl -fsSL "${BINARY_URL}" -o "${INSTALL_DIR}/${BINARY_NAME}"; then
-    echo "Error: Failed to download the ${BINARY_NAME} binary."
+    echo "Error: Failed to download the ${BINARY_NAME} binary from ${BINARY_URL}."
+    echo "Please check if the BINARY_URL is correct and the file exists."
     exit 1
 fi
 
@@ -36,20 +37,19 @@ fi
 echo "Setting execute permissions for ${BINARY_NAME}..."
 chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
 
-# 4. (Optional) Create a systemd service file for auto-starting SuitTunnel
-# This part depends heavily on how your SuitTunnel application is designed to run.
-# Example: Create a service file that runs the binary.
-SERVICE_FILE="/etc/systemd/system/suittunnel.service"
-if ! systemctl list-unit-files | grep -q "suittunnel.service"; then
-    echo "Creating systemd service file: ${SERVICE_FILE}"
-    sudo bash -c "cat > ${SERVICE_FILE}" << EOF
+# 4. Create a systemd service file for auto-starting SuitTunnel
+echo "Creating systemd service file: ${SERVICE_FILE}"
+# Use sudo to write to /etc/systemd/system
+sudo bash -c "cat > ${SERVICE_FILE}" << EOF
 [Unit]
 Description=SuitTunnel Service
 After=network.target
 
 [Service]
-User=$(id -u -n)
-Group=$(id -g -n)
+# Consider running as a non-root user for better security if your application allows it.
+# User=$(id -u -n)
+# Group=$(id -g -n)
+# If running as root, adjust User/Group or remove them if not needed.
 WorkingDirectory=${INSTALL_DIR}
 ExecStart=${INSTALL_DIR}/${BINARY_NAME}
 Restart=on-failure
@@ -59,19 +59,25 @@ RestartSec=5
 Type=simple
 WantedBy=multi-user.target
 EOF
-    echo "Reloading systemd daemon..."
-    sudo systemctl daemon-reload
-    echo "Enabling and starting SuitTunnel service..."
-    sudo systemctl enable suittunnel.service
-    sudo systemctl start suittunnel.service
-    echo "SuitTunnel service enabled and started."
+
+echo "Reloading systemd daemon..."
+sudo systemctl daemon-reload
+
+echo "Enabling and starting SuitTunnel service..."
+# Enable the service to start on boot
+sudo systemctl enable suittunnel.service
+# Start the service immediately
+sudo systemctl start suittunnel.service
+
+# Check the status of the service
+SERVICE_STATUS=$(sudo systemctl is-active suittunnel.service)
+if [ "$SERVICE_STATUS" = "active" ]; then
+    echo "SuitTunnel service started successfully."
 else
-    echo "SuitTunnel service already exists. Trying to restart..."
-    sudo systemctl restart suittunnel.service
-    echo "SuitTunnel service restarted."
+    echo "SuitTunnel service failed to start. Status: ${SERVICE_STATUS}"
+    echo "You can check detailed logs with: sudo journalctl -u suittunnel.service"
 fi
 
-echo "SuitTunnel installation and setup completed successfully!"
-echo "You can check the status with: sudo systemctl status suittunnel.service"
+echo "SuitTunnel installation and setup completed."
 
 exit 0
